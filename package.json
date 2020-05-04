@@ -1,0 +1,7 @@
+{
+  "name": "twitch-chat-bot",
+  "version": "1.0.0",
+  "dependencies": {
+    "tmi.js": "latest"
+  }
+}
