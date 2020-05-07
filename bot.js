@@ -1,5 +1,6 @@
 const params = require('./bot-params.js');
 const tmi = require('tmi.js');
+const fs = require('fs');
 
 const messagesNominative = ['сообщений', 'сообщение', 'сообщения'],
   connectOptions = {
@@ -19,7 +20,7 @@ const messagesNominative = ['сообщений', 'сообщение', 'соо�
 
 let usersMessagesCount = {},
   userDuelQueue = [],
-  userDuelDelay = [],
+  userDuelDetails = {},
   timerId;
 
 client.on('message', onMessageHandler);
@@ -40,9 +41,9 @@ function onMessageHandler (target, context, msg, self) {
         client.say(target, `Привет, ${user}!`);
         return;
 
-      case '!статистика':
+      case '!сообщения':
         if (user === params.creator || user === params.channel) {
-          echoBonusInConsole();
+          saveBonusToFile();
         }
         let messagesCount = user in usersMessagesCount ? usersMessagesCount[user] : 0;
         client.say(target, `${user}, у вас ${messagesCount} ${messagesNominative[getWordNominative(messagesCount)]} в чате.`);
@@ -71,14 +72,21 @@ function onMessageHandler (target, context, msg, self) {
 
       case '!очистить':
         if (user === params.creator || user === params.channel || user.mod === true) {
-          echoBonusInConsole();
           usersMessagesCount = [];
+          saveBonusToFile();
           client.say(target, `Статистика сообщений успешно очищена.`);
         }
         return;
 
+      case '!сохранить':
+        if (user === params.creator || user === params.channel || context.mod === true) {
+          saveDataToFiles();
+          client.say(target, `Пользовательские данные успешно сохранены.`);
+        }
+        return;
+
       case '!дуэль':
-        if (userDuelDelay[user] && userDuelDelay[user] + params.duelDelayTimeout > Date.now()) {
+        if (userDuelDetails[user] && userDuelDetails[user].delay + params.duelDelayTimeout > Date.now()) {
           client.say(target, `${user}, передохни немного после предыдущей дуэли.`);
           return;
         }
@@ -125,7 +133,29 @@ function onMessageHandler (target, context, msg, self) {
           }, 1000);
 
           userDuelQueue.splice(currentDuel, 1);
-          userDuelDelay[winner] = Date.now();
+
+          if (!userDuelDetails[winner]) {
+            userDuelDetails[winner] = {
+              win: 1,
+              lose: 0,
+            }
+          }
+          else {
+            userDuelDetails[winner].win += 1;
+          }
+          userDuelDetails[winner].delay = Date.now();
+
+          if (!userDuelDetails[loser]) {
+            userDuelDetails[loser] = {
+              win: 0,
+              lose: 1,
+            }
+          }
+          else {
+            userDuelDetails[loser].lose += 1;
+          }
+          userDuelDetails[loser].delay = Date.now();
+
           return;
         }
 
@@ -147,6 +177,18 @@ function onMessageHandler (target, context, msg, self) {
           client.say(target, `${user} вызвал на дуэль ${duelable}. Осмелится ли он бросить ему вызов?`);
         else
           client.say(target, `${user} ждёт дуэлянта.`);
+
+        return;
+
+      case '!статистика':
+        if (!userDuelDetails[user]) {
+          userDuelDetails[user] = {
+            win: 0,
+            lose: 0,
+          };
+        }
+
+        client.say(target, `${user}: Побед ${userDuelDetails[user].win} / Поражений ${userDuelDetails[user].lose}.`);
 
         return;
     }
@@ -176,22 +218,66 @@ function onMessageHandler (target, context, msg, self) {
 function onConnectedHandler (addr, port) {
   console.log(`* Подключен к ${addr}:${port}`);
   console.log(`* Канал ${params.channel}`);
+
+  loadBonusFromFile();
+  loadDuelFromFile();
 }
 
-function echoBonusInConsole() {
-  let date = new Date(),
-    result = getLeadingZero(date.getHours()) + ':' + getLeadingZero(date.getMinutes()) + ' Пользовательские бонусы: {';
-
-  for (let i in usersMessagesCount)
-    result += `'${i}': ${usersMessagesCount[i]}, `;
-  if (Object.keys(usersMessagesCount).length) result = result.substring(0, result.length - 2);
-  result += '}';
-
-  console.log(result);
+function loadBonusFromFile() {
+  fs.readFile('bonus.json', 'utf8', (err, data) => {
+    if (err) {
+      console.log(err);
+    } else {
+      usersMessagesCount = JSON.parse(data) || {};
+      console.log('Бонусы успешно загружены из файла.');
+    }
+  });
 }
 
-function getLeadingZero(param) {
-  return (param < 10 ? '0' : '') + param;
+function loadDuelFromFile() {
+  fs.readFile('duel.json', 'utf8', (err, data) => {
+    if (err) {
+      console.log(err);
+    } else {
+      userDuelDetails = JSON.parse(data) || {};
+      console.log('Данные по дуэлям успешно загружены из файла.');
+    }
+  });
+}
+
+function saveDataToFiles() {
+  saveBonusToFile();
+  saveDuelToFile();
+}
+
+function saveBonusToFile() {
+  let json = JSON.stringify(usersMessagesCount);
+
+  console.log(json);
+
+  fs.writeFile('bonus.json', json, 'utf8', (err) => {
+    if (err) {
+      console.log(err);
+    }
+    else {
+      console.log('Бонусы успешно сохранены в файл.');
+    }
+  });
+}
+
+function saveDuelToFile() {
+  let json = JSON.stringify(userDuelDetails);
+
+  console.log(json);
+
+  fs.writeFile('duel.json', json, 'utf8', (err) => {
+    if (err) {
+      console.log(err);
+    }
+    else {
+      console.log('Данные по дуэлям успешно сохранены в файл.');
+    }
+  });
 }
 
 function getWordNominative(count) {
@@ -209,4 +295,4 @@ function getWordNominative(count) {
 }
 
 if (params.enableMessageBonus)
-  timerId = setInterval(echoBonusInConsole, params.statisticsWriteDelay);
+  timerId = setInterval(saveDataToFiles, params.statisticsWriteDelay);
